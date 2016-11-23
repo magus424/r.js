@@ -1,5 +1,5 @@
 /**
- * @license r.js 2.3.2+ Sat, 29 Oct 2016 21:28:02 GMT Copyright jQuery Foundation and other contributors.
+ * @license r.js 2.3.2+ Wed, 23 Nov 2016 00:56:13 GMT Copyright jQuery Foundation and other contributors.
  * Released under MIT license, http://github.com/requirejs/r.js/LICENSE
  */
 
@@ -19,7 +19,7 @@ var requirejs, require, define, xpcUtil;
 (function (console, args, readFileFunc) {
     var fileName, env, fs, vm, path, exec, rhinoContext, dir, nodeRequire,
         nodeDefine, exists, reqMain, loadedOptimizedLib, existsForNode, Cc, Ci,
-        version = '2.3.2+ Sat, 29 Oct 2016 21:28:02 GMT',
+        version = '2.3.2+ Wed, 23 Nov 2016 00:56:13 GMT',
         jsSuffixRegExp = /\.js$/,
         commandOption = '',
         useLibLoaded = {},
@@ -25692,6 +25692,8 @@ define('build', function (require) {
         prim = require('prim'),
         logger = require('logger'),
         file = require('env!env/file'),
+        fs = require('fs'),
+        util = require('util'),
         parse = require('parse'),
         optimize = require('optimize'),
         pragma = require('pragma'),
@@ -26209,6 +26211,7 @@ define('build', function (require) {
                                 });
                             });
                         }
+
                         if (module.excludeShallow) {
                             //module.excludeShallow is an array of module names.
                             //shallow exclusions are just that module itself, and not
@@ -26219,6 +26222,23 @@ define('build', function (require) {
                                     build.removeModulePath(excludeShallowModule, path, module.layer);
                                 }
                             });
+                        }
+
+                        if (config.out && !config.cssIn) {
+                            if (file.exists(module._buildPath)) {
+                                var mStat = fs.statSync(module._buildPath);
+                                var mTime = new Date(util.inspect(mStat.mtime));
+                                var newerFiles = module.layer.buildFilePaths.filter(function (path) {
+                                    var fStat = fs.statSync(path);
+                                    var fTime = new Date(util.inspect(fStat.mtime));
+                                    return (fTime > mTime);
+                                });
+                                if (!newerFiles.length) {
+                                    // file.copyFile(module._buildPath, module._buildPath + '-temp');
+                                    logger.info("Bundle is newer than components; skipping.");
+                                    config.abort = true;
+                                }
+                            }
                         }
 
                         //Flatten them and collect the build output for each module.
@@ -26239,7 +26259,6 @@ define('build', function (require) {
                                     file.saveUtf8File(module._buildPath + '.map', builtModule.sourceMap);
                                 }
                                 file.saveUtf8File(module._buildPath + '-temp', finalText);
-
                             }
                             buildFileContents += builtModule.buildText;
                         });
@@ -26256,6 +26275,10 @@ define('build', function (require) {
                 modules.forEach(function (module) {
                     var entryConfig,
                         finalPath = module._buildPath;
+
+                    if (config.abort) {
+                        return;
+                    }
 
                     if (finalPath !== 'FUNCTION') {
                         if (file.exists(finalPath)) {
@@ -26347,7 +26370,12 @@ define('build', function (require) {
                         config._buildSourceMap = null;
                     }
                 } else {
-                    optimize.jsFile(fileName, null, fileName, config);
+                    if (config.abort) {
+                        buildFileContents = "";
+                    }
+                    else {
+                        optimize.jsFile(fileName, null, fileName, config);
+                    }
                 }
             } else if (!config.cssIn) {
                 //Normal optimizations across modules.

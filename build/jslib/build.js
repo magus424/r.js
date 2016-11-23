@@ -10,6 +10,8 @@ define(function (require) {
         prim = require('prim'),
         logger = require('logger'),
         file = require('env!env/file'),
+        fs = require('fs'),
+        util = require('util'),
         parse = require('parse'),
         optimize = require('optimize'),
         pragma = require('pragma'),
@@ -527,6 +529,7 @@ define(function (require) {
                                 });
                             });
                         }
+
                         if (module.excludeShallow) {
                             //module.excludeShallow is an array of module names.
                             //shallow exclusions are just that module itself, and not
@@ -537,6 +540,23 @@ define(function (require) {
                                     build.removeModulePath(excludeShallowModule, path, module.layer);
                                 }
                             });
+                        }
+
+                        if (config.out && !config.cssIn) {
+                            if (file.exists(module._buildPath)) {
+                                var mStat = fs.statSync(module._buildPath);
+                                var mTime = new Date(util.inspect(mStat.mtime));
+                                var newerFiles = module.layer.buildFilePaths.filter(function (path) {
+                                    var fStat = fs.statSync(path);
+                                    var fTime = new Date(util.inspect(fStat.mtime));
+                                    return (fTime > mTime);
+                                });
+                                if (!newerFiles.length) {
+                                    // file.copyFile(module._buildPath, module._buildPath + '-temp');
+                                    logger.info("Bundle is newer than components; skipping.");
+                                    config.abort = true;
+                                }
+                            }
                         }
 
                         //Flatten them and collect the build output for each module.
@@ -557,7 +577,6 @@ define(function (require) {
                                     file.saveUtf8File(module._buildPath + '.map', builtModule.sourceMap);
                                 }
                                 file.saveUtf8File(module._buildPath + '-temp', finalText);
-
                             }
                             buildFileContents += builtModule.buildText;
                         });
@@ -574,6 +593,10 @@ define(function (require) {
                 modules.forEach(function (module) {
                     var entryConfig,
                         finalPath = module._buildPath;
+
+                    if (config.abort) {
+                        return;
+                    }
 
                     if (finalPath !== 'FUNCTION') {
                         if (file.exists(finalPath)) {
@@ -665,7 +688,12 @@ define(function (require) {
                         config._buildSourceMap = null;
                     }
                 } else {
-                    optimize.jsFile(fileName, null, fileName, config);
+                    if (config.abort) {
+                        buildFileContents = "";
+                    }
+                    else {
+                        optimize.jsFile(fileName, null, fileName, config);
+                    }
                 }
             } else if (!config.cssIn) {
                 //Normal optimizations across modules.
